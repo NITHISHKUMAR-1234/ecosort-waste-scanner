@@ -4,7 +4,8 @@ import { analysisSchema, FIVE_RS } from '@/lib/analysis-schema'
 export const maxDuration = 60
 
 const GEMINI_ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models'
-const DEFAULT_MODEL = 'gemini-2.5-flash'
+const FALLBACK_MODELS = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.5-flash-lite', 'gemini-flash-lite-latest']
+const RETRYABLE_STATUSES = new Set([404, 429, 500, 502, 503, 504])
 
 const requestSchema = z.object({
   image: z
@@ -56,9 +57,9 @@ function describeGeminiError(status: number, data: GeminiResponse | null, model:
   if (status === 400 && /api key/i.test(detail)) return 'Your GEMINI_API_KEY is invalid. Create a new key in Google AI Studio and update the environment variable.'
   if (status === 400) return `Gemini rejected the request: ${detail || 'bad request'}`
   if (status === 401 || status === 403) return 'Your GEMINI_API_KEY does not have permission to use the Gemini API. Check the key in Google AI Studio.'
-  if (status === 404) return `The Gemini model "${model}" was not found. Set GEMINI_MODEL to a current vision model (e.g. gemini-2.5-flash).`
+  if (status === 404) return `The Gemini model "${model}" is not available for your API key. Set GEMINI_MODEL to a current vision model (e.g. ${FALLBACK_MODELS[0]}).`
   if (status === 429) return 'Gemini free-tier rate limit or quota reached. Wait a minute and try again.'
-  if (status >= 500) return 'The Gemini service is temporarily unavailable. Please try again shortly.'
+  if (status >= 500) return 'Gemini is experiencing high demand right now. Please try again in a moment.'
   return `Gemini request failed (${status}). ${detail}`.trim()
 }
 
@@ -67,7 +68,7 @@ export async function POST(req: Request) {
   if (!apiKey) {
     return errorResponse('Vision AI is not configured: the GEMINI_API_KEY environment variable is missing on the server.', 500)
   }
-  const model = process.env.GEMINI_MODEL || DEFAULT_MODEL
+  const models = [...new Set([process.env.GEMINI_MODEL, ...FALLBACK_MODELS].filter((m): m is string => Boolean(m)))]
 
   let body: unknown
   try {
@@ -86,41 +87,60 @@ export async function POST(req: Request) {
     return errorResponse('Please provide a valid image (PNG, JPG or WEBP).', 400)
   }
 
-  let res: Response
-  try {
-    res = await fetch(`${GEMINI_ENDPOINT}/${encodeURIComponent(model)}:generateContent`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-      signal: AbortSignal.timeout(50_000),
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              { inlineData: { mimeType: mediaType.toLowerCase(), data: base64 } },
-              { text: 'Identify and classify the waste item in this photo.' },
-            ],
-          },
+  const requestBody = JSON.stringify({
+    systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          { inlineData: { mimeType: mediaType.toLowerCase(), data: base64 } },
+          { text: 'Identify and classify the waste item in this photo.' },
         ],
-        generationConfig: {
-          temperature: 0.2,
-          responseMimeType: 'application/json',
-          responseSchema,
-        },
-      }),
-    })
-  } catch (error) {
-    console.error('[ecosort] Gemini network error', error)
-    const timedOut = error instanceof Error && error.name === 'TimeoutError'
-    return errorResponse(timedOut ? 'Gemini took too long to respond. Please try again.' : 'Could not reach the Gemini API. Check your connection and try again.', 504)
+      },
+    ],
+    generationConfig: {
+      temperature: 0.2,
+      responseMimeType: 'application/json',
+      responseSchema,
+    },
+  })
+
+  const deadline = Date.now() + 55_000
+  let data: GeminiResponse | null = null
+  let lastFailure: { status: number; data: GeminiResponse | null; model: string } | null = null
+
+  for (const model of models) {
+    const remaining = deadline - Date.now()
+    if (remaining < 3_000) break
+
+    let res: Response
+    try {
+      res = await fetch(`${GEMINI_ENDPOINT}/${encodeURIComponent(model)}:generateContent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        signal: AbortSignal.timeout(remaining),
+        body: requestBody,
+      })
+    } catch (error) {
+      console.error('[ecosort] Gemini network error', model, error)
+      const timedOut = error instanceof Error && error.name === 'TimeoutError'
+      return errorResponse(timedOut ? 'Gemini took too long to respond. Please try again.' : 'Could not reach the Gemini API. Check your connection and try again.', 504)
+    }
+
+    const payload = (await res.json().catch(() => null)) as GeminiResponse | null
+    if (res.ok) {
+      data = payload
+      break
+    }
+
+    console.error('[ecosort] Gemini API error', model, res.status, payload?.error?.status, payload?.error?.message)
+    lastFailure = { status: res.status, data: payload, model }
+    if (!RETRYABLE_STATUSES.has(res.status)) break
   }
 
-  const data = (await res.json().catch(() => null)) as GeminiResponse | null
-
-  if (!res.ok) {
-    console.error('[ecosort] Gemini API error', res.status, data?.error?.status, data?.error?.message)
-    return errorResponse(describeGeminiError(res.status, data, model), res.status === 429 ? 429 : 502)
+  if (!data) {
+    if (!lastFailure) return errorResponse('Gemini took too long to respond. Please try again.', 504)
+    return errorResponse(describeGeminiError(lastFailure.status, lastFailure.data, lastFailure.model), lastFailure.status === 429 ? 429 : 502)
   }
 
   if (data?.promptFeedback?.blockReason) {
