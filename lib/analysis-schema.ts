@@ -5,8 +5,8 @@ export const FIVE_RS = ['Refuse', 'Reduce', 'Reuse', 'Repurpose', 'Recycle'] as 
 export const analysisSchema = z.object({
   isWasteItem: z.boolean().describe('False if no recognisable waste item is in the photo'),
   itemName: z.string().describe('Short, specific name of the detected item'),
-  classification: z.enum(['biodegradable', 'non-biodegradable']),
-  confidence: z.number().int().min(0).max(100),
+  classification: z.enum(['biodegradable', 'non-biodegradable', 'special-handling']),
+  confidence: z.number().min(0).max(100).transform(Math.round),
   primaryR: z.enum(FIVE_RS).describe('The one of the 5 Rs that best applies'),
   rReason: z.string().describe('Why this R applies, 1-2 sentences'),
   decompositionTime: z.string().describe('Estimated breakdown duration, e.g. "2–5 weeks"'),

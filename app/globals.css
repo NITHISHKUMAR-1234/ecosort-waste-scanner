@@ -11,6 +11,8 @@
   --color-bio-soft: var(--bio-soft);
   --color-nonbio: var(--nonbio);
   --color-nonbio-soft: var(--nonbio-soft);
+  --color-special: var(--special);
+  --color-special-soft: var(--special-soft);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -61,6 +63,8 @@
   --bio-soft: oklch(0.95 0.05 150);
   --nonbio: oklch(0.56 0.19 35);
   --nonbio-soft: oklch(0.96 0.04 50);
+  --special: oklch(0.5 0.13 75);
+  --special-soft: oklch(0.96 0.05 90);
   --radius: 0.75rem;
 }
 

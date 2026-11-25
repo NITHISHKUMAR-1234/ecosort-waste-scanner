@@ -9,6 +9,12 @@ type Props = {
   onRemove: (id: string) => void
 }
 
+const CLASS_LABELS: Record<Scan['classification'], { label: string; color: string }> = {
+  biodegradable: { label: 'Bio', color: 'text-bio' },
+  'non-biodegradable': { label: 'Non-bio', color: 'text-nonbio' },
+  'special-handling': { label: 'Special', color: 'text-special' },
+}
+
 const timeFormat = new Intl.DateTimeFormat(undefined, { hour: 'numeric', minute: '2-digit' })
 
 export function RecentScans({ scans, activeId, onSelect, onRemove }: Props) {
@@ -27,7 +33,7 @@ export function RecentScans({ scans, activeId, onSelect, onRemove }: Props) {
       ) : (
         <ul className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2">
           {scans.map((s) => {
-            const bio = s.classification === 'biodegradable'
+            const tag = CLASS_LABELS[s.classification]
             return (
               <li key={s.id} className="relative w-40 shrink-0 snap-start">
                 <button
@@ -43,8 +49,8 @@ export function RecentScans({ scans, activeId, onSelect, onRemove }: Props) {
                   <span className="flex flex-col gap-1 p-2.5">
                     <span className="truncate text-sm font-medium">{s.itemName}</span>
                     <span className="flex items-center justify-between gap-2 text-xs">
-                      <span className={cn('font-semibold', s.isWasteItem ? (bio ? 'text-bio' : 'text-nonbio') : 'text-muted-foreground')}>
-                        {s.isWasteItem ? (bio ? 'Bio' : 'Non-bio') : 'Unknown'}
+                      <span className={cn('font-semibold', s.isWasteItem ? tag.color : 'text-muted-foreground')}>
+                        {s.isWasteItem ? tag.label : 'Unknown'}
                       </span>
                       <time dateTime={new Date(s.scannedAt).toISOString()} className="text-muted-foreground">
                         {timeFormat.format(s.scannedAt)}

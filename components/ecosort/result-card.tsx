@@ -51,8 +51,14 @@ export function ResultCard({ scan, preview, loading, error }: Props) {
   )
 }
 
+const CLASS_STYLES: Record<Scan['classification'], { label: string; solid: string; soft: string }> = {
+  biodegradable: { label: 'BIODEGRADABLE', solid: 'bg-bio', soft: 'bg-bio-soft' },
+  'non-biodegradable': { label: 'NON-BIODEGRADABLE', solid: 'bg-nonbio', soft: 'bg-nonbio-soft' },
+  'special-handling': { label: 'SPECIAL HANDLING', solid: 'bg-special', soft: 'bg-special-soft' },
+}
+
 function ScanDetails({ scan }: { scan: Scan }) {
-  const bio = scan.classification === 'biodegradable'
+  const style = CLASS_STYLES[scan.classification]
 
   if (!scan.isWasteItem) {
     return (
@@ -71,12 +77,9 @@ function ScanDetails({ scan }: { scan: Scan }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <span
-            className={cn(
-              'inline-flex rounded-full px-3 py-1 text-xs font-bold tracking-wider',
-              bio ? 'bg-bio text-primary-foreground' : 'bg-nonbio text-primary-foreground',
-            )}
+            className={cn('inline-flex rounded-full px-3 py-1 text-xs font-bold tracking-wider text-primary-foreground', style.solid)}
           >
-            {bio ? 'BIODEGRADABLE' : 'NON-BIODEGRADABLE'}
+            {style.label}
           </span>
           <p className="mt-2 text-xl font-semibold tracking-tight text-balance">{scan.itemName}</p>
         </div>
@@ -87,10 +90,10 @@ function ScanDetails({ scan }: { scan: Scan }) {
       </div>
 
       <div className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden="true">
-        <div className={cn('h-full rounded-full', bio ? 'bg-bio' : 'bg-nonbio')} style={{ width: `${scan.confidence}%` }} />
+        <div className={cn('h-full rounded-full', style.solid)} style={{ width: `${scan.confidence}%` }} />
       </div>
 
-      <div className={cn('rounded-xl p-4', bio ? 'bg-bio-soft' : 'bg-nonbio-soft')}>
+      <div className={cn('rounded-xl p-4', style.soft)}>
         <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">5 Rs guidance</p>
         <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="The 5 Rs">
           {FIVE_RS.map((r) => (
@@ -99,11 +102,7 @@ function ScanDetails({ scan }: { scan: Scan }) {
               aria-current={r === scan.primaryR ? 'true' : undefined}
               className={cn(
                 'rounded-full px-2.5 py-1 text-xs font-medium',
-                r === scan.primaryR
-                  ? bio
-                    ? 'bg-bio text-primary-foreground'
-                    : 'bg-nonbio text-primary-foreground'
-                  : 'bg-card text-muted-foreground',
+                r === scan.primaryR ? cn(style.solid, 'text-primary-foreground') : 'bg-card text-muted-foreground',
               )}
             >
               {r}
